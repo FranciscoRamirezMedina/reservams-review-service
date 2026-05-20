@@ -4,6 +4,8 @@ import com.duoc.reservams.reviewservice.dto.ReviewRequestDTO;
 import com.duoc.reservams.reviewservice.dto.ReviewResponseDTO;
 import com.duoc.reservams.reviewservice.model.Review;
 import com.duoc.reservams.reviewservice.repository.ReviewRepository;
+import com.duoc.reservams.reviewservice.client.ReservationClient;
+import com.duoc.reservams.reviewservice.dto.ReservationResponseDTO;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -15,8 +17,12 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
 
-    public ReviewService(ReviewRepository reviewRepository) {
+    private final ReservationClient reservationClient;
+
+    public ReviewService(ReviewRepository reviewRepository,
+                         ReservationClient reservationClient) {
         this.reviewRepository = reviewRepository;
+        this.reservationClient = reservationClient;
     }
 
     public List<ReviewResponseDTO> findAll() {
@@ -55,9 +61,32 @@ public class ReviewService {
     }
 
     public ReviewResponseDTO create(ReviewRequestDTO request) {
-        // evita que una misma reserva tenga mas de una reseña
+        // evitamos que una misma reserva tenga mas de una reseña
         if (reviewRepository.existsByReservationId(request.getReservationId())) {
             throw new RuntimeException("Esta reserva ya tiene una reseña registrada");
+        }
+
+        try {
+            // consultamos reservation-service para verificar que la reserva exista
+            ReservationResponseDTO reservation =
+                    reservationClient.findById(request.getReservationId());
+
+            // validamos que la reseña coincida con la reserva consultada
+            if (!reservation.getClientUserId().equals(request.getClientUserId())) {
+                throw new RuntimeException("El cliente no coincide con la reserva");
+            }
+
+            if (!reservation.getHotelId().equals(request.getHotelId())) {
+                throw new RuntimeException("El hotel no coincide con la reserva");
+            }
+
+            // para esta version permitimos reseña solo si la reserva esta confirmada
+            if (!reservation.getStatus().equals("CONFIRMED")) {
+                throw new RuntimeException("Solo se puede crear reseña para reservas confirmadas");
+            }
+
+        } catch (Exception ex) {
+            throw new RuntimeException("No se pudo validar la reserva: " + ex.getMessage());
         }
 
         Review review = new Review();
